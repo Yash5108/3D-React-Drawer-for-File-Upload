@@ -1,0 +1,139 @@
+import React, { useRef, useState, useMemo } from "react";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, useGLTF, useTexture } from "@react-three/drei";
+import { MeshStandardMaterial } from "three";
+import { useSpring, a } from "@react-spring/three";
+
+/* ────────────────────────────────────────────────
+   Component: DrawerShelf
+   - Handles animation for a single shelf (or drawer)
+   - Moves along Z-axis when hovered
+──────────────────────────────────────────────── */
+function DrawerShelf({ mesh, texture, isHovered, onHover, onLeave }) {
+  // Animate Z position based on hover state
+  const { z } = useSpring({
+    z: isHovered ? 6 : 0, // move out when hovered
+    config: { mass: 1, tension: 180, friction: 18 },
+  });
+
+  return (
+    // a.primitive = animated version of <primitive>
+    <a.primitive
+      object={mesh}
+      position-z={z}
+      onPointerOver={onHover}
+      onPointerOut={onLeave}
+      castShadow
+      receiveShadow
+    />
+  );
+}
+
+/* ────────────────────────────────────────────────
+   Component: DrawerModel
+   - Loads the 3D drawer model (.glb)
+   - Applies texture to all meshes
+   - Detects and animates individual drawers/shelves
+──────────────────────────────────────────────── */
+function DrawerModel({ textureURL }) {
+  const group = useRef();
+  const { scene } = useGLTF("/RawDrawer.glb"); // load your .glb file
+  const texture = useTexture(textureURL);   // load texture PNG
+
+  const [hovered, setHovered] = useState(null);
+
+  // Collect and texture all mesh parts from the GLTF model
+  const meshes = useMemo(() => {
+    const list = [];
+    scene.traverse((child) => {
+      if (child.isMesh) {
+        // Apply the custom texture material
+        child.material = new MeshStandardMaterial({
+          map: texture,
+          metalness: 0.2,
+          roughness: 0.6,
+        });
+        list.push(child);
+      }
+    });
+    return list;
+  }, [scene, texture]);
+
+  return (
+    <group
+      ref={group}
+      position={[0, -10, 0]}                 // main model position
+      rotation={[-0.0, Math.PI / 4, 0]}     // top-down 30° view
+    >
+      {/* Iterate through all meshes in the model */}
+      {meshes.map((mesh) => {
+        const name = mesh.name.toLowerCase();
+        const isShelf = name.includes("shelf") || name.includes("drawer");
+
+        // Identify shelves and give them hover animation
+        if (isShelf) {
+          return (
+            <DrawerShelf
+              key={mesh.uuid}
+              mesh={mesh}
+              texture={texture}
+              isHovered={hovered === mesh.name}
+              onHover={() => setHovered(mesh.name)}
+              onLeave={() => setHovered(null)}
+            />
+          );
+        }
+
+        // Non-shelf parts (like the frame)
+        return <primitive key={mesh.uuid} object={mesh} />;
+      })}
+    </group>
+  );
+}
+
+/* ────────────────────────────────────────────────
+   Main Component: DrawerViewer
+   - Sets up lighting, shadows, camera, and scene
+   - Adds interactivity controls and transparent bg
+──────────────────────────────────────────────── */
+export default function DrawerViewer() {
+  return (
+    <Canvas
+      shadows
+      camera={{ position: [60, 20, 30], fov: 45 }}
+      style={{
+        width: "100vw",
+        height: "100vh",
+        background: "transparent", // so it blends with your existing webpage
+      }}
+    >
+      {/* Soft ambient light for base illumination */}
+      <ambientLight intensity={0.6} />
+
+      {/* Directional light (acts like sunlight) with shadow */}
+      <directionalLight
+        position={[10, 10, 5]}
+        intensity={1.2}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+      />
+
+      {/* Subtle shadow catcher plane */}
+      <mesh
+        // receiveShadow
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, 0, 0]}
+      >
+        <planeGeometry args={[50, 50]} />
+        <shadowMaterial opacity={0.2} />
+      </mesh>
+
+      {/* Load the main drawer model */}
+      <DrawerModel textureURL="/drawer_texture.png" />
+
+      {/* Camera controls (orbit, pan, zoom) */}
+      {/* <OrbitControls enableZoom enablePan={false} /> */}
+    </Canvas>
+  );
+}

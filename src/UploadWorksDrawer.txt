@@ -1,0 +1,186 @@
+import React, { useRef, useState, useMemo } from "react";
+import { useGLTF, useTexture, Html } from "@react-three/drei";
+import { MeshStandardMaterial } from "three";
+import { useSpring, a } from "@react-spring/three";
+
+/* ────────────────────────────────────────────────
+   Component: DrawerShelf
+   - Handles animation for a single shelf (or drawer)
+   - Moves along Z-axis when hovered
+──────────────────────────────────────────────── */
+function DrawerShelf({ mesh, isHovered, onHover, onLeave }) {
+  // Animate Z position based on hover state
+  const { z } = useSpring({
+    z: isHovered ? 6 : 0, // move out when hovered
+    config: { mass: 1, tension: 180, friction: 18 },
+  });
+
+  return (
+    <a.primitive
+      object={mesh}
+      position-z={z}
+      onPointerOver={onHover}
+      onPointerOut={onLeave}
+      castShadow
+      receiveShadow
+    />
+  );
+}
+
+/* ────────────────────────────────────────────────
+   Component: DrawerModel
+   - Loads the 3D drawer model (.glb)
+   - Applies texture to all meshes
+   - Detects and animates individual drawers/shelves
+   - Adds upload button functionality for the top shelf
+──────────────────────────────────────────────── */
+export default function DrawerModel({ textureURL }) {
+  const group = useRef();
+  const { scene } = useGLTF("/RawDrawer.glb"); // load your .glb file
+  const texture = useTexture(textureURL); // load texture PNG
+
+  const [hovered, setHovered] = useState(null); // hover state for top shelf
+  const [uploading, setUploading] = useState(false); // disables hover during upload
+  const [fileName, setFileName] = useState(null); // stores uploaded file name
+  const [isFileUploaded, setIsFileUploaded] = useState(false); // track file upload state
+
+  // Collect and texture all mesh parts from the GLTF model
+  const meshes = useMemo(() => {
+    const list = [];
+    scene.traverse((child) => {
+      if (child.isMesh) {
+        // Apply the custom texture material
+        child.material = new MeshStandardMaterial({
+          map: texture,
+          metalness: 0.2,
+          roughness: 0.6,
+        });
+        list.push(child);
+      }
+    });
+    return list;
+  }, [scene, texture]);
+
+  // File input handler
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setUploading(true);
+    setFileName(file.name);
+    setHovered(null);
+
+    // Simulate upload delay
+    setTimeout(() => {
+      setUploading(false);
+      e.target.value = '';
+      setIsFileUploaded(true); // mark file as uploaded
+    }, 2000);
+  };
+
+  // Delete handler
+  const handleDelete = () => {
+    setFileName(null);
+    setIsFileUploaded(false);
+    alert('File deleted!');
+  };
+
+  return (
+    <group
+      ref={group}
+      position={[0, -1, 0]} // main model position
+      rotation={[-0.0, Math.PI / 4, 0]} // top-down 30° view
+    >
+      {/* Iterate through all meshes in the model */}
+      {meshes.map((mesh) => {
+        // Specifically check for the top shelf - adjust these conditions based on your model
+        const isTopShelf = mesh.name.toLowerCase().includes("shelf1");
+
+        // Identify the top shelf and give it hover animation
+        if (isTopShelf) {
+          return (
+            <React.Fragment key={mesh.uuid}>
+              <DrawerShelf
+                mesh={mesh}
+                isHovered={!isFileUploaded && !uploading && hovered === mesh.name}
+                onHover={() => !isFileUploaded && !uploading && setHovered(mesh.name)}
+                onLeave={() => !isFileUploaded && !uploading && setHovered(null)}
+              />
+
+              {/* Show delete button if file is uploaded, otherwise show upload button */}
+              {((isFileUploaded && !uploading) || (!uploading && hovered === mesh.name)) && (
+                <Html
+                  position={[0, 0, 6]} // Positioned on the shelf
+                  center
+                  distanceFactor={8}
+                  style={{
+                    transform: "translateY(-0%)",
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    width: "100%",
+                    height: "100%",
+                  }}
+                >
+                  <div
+                    style={{
+                      transform: "scale(7.5) translateY(-230px)",
+                      pointerEvents: "auto",
+                      position: "relative",
+                      zIndex: 1000,
+                    }}
+                  >
+                    {isFileUploaded ? (
+                      // Delete button
+                      <button
+                        onClick={handleDelete}
+                        style={{
+                          padding: "10px 20px",
+                          background: "#ff5656a1",
+                          border: "2px outset #ffffff60",
+                          color: "white",
+                          borderRadius: "5px",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                          boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Delete File
+                      </button>
+                    ) : (
+                      // Upload button
+                      <label
+                        style={{
+                          padding: "10px 20px",
+                          background: "#56aafea1",
+                          border: "2px outset #ffffff60",
+                          color: "white",
+                          borderRadius: "5px",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                          boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Upload File
+                        <input
+                          type="file"
+                          style={{ display: "none" }}
+                          onChange={handleFileChange}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </Html>
+              )}
+            </React.Fragment>
+          );
+        }
+
+        // All other meshes remain static
+        return <primitive key={mesh.uuid} object={mesh} />;
+      })}
+    </group>
+  );
+}
